@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "aiv-note-gen-1-1-001",
+  "kind": "aiv-note",
+  "label": "Kevin's comment (not Scripture)",
+  "author": {
+    "name": "Kevin Amundson",
+    "role": "interpreter"
+  },
+  "status": "draft-for-kevin",
+  "visibility": "private",
+  "createdAt": "2026-09-01T15:20:00Z",
+  "updatedAt": "2026-09-08T22:30:00Z",
+  "range": {
+    "start": {
+      "book": "GEN",
+      "chapter": 1,
+      "verse": 1
+    },
+    "end": {
+      "book": "GEN",
+      "chapter": 1,
+      "verse": 1
+    }
+  },
+  "verseIds": [
+    "GEN.1.1"
+  ],
+  "scriptureCite": {
+    "translationId": "BLB-Draft",
+    "sourceUrl": "same-origin:/assets/GEN-*.usx",
+    "fetchedAt": "2026-09-07T18:00:00Z",
+    "excerpt": "In the beginning God created the heavens and the earth."
+  },
+  "body": {
+    "format": "markdown",
+    "text": "DRAFT-FOR-KEVIN: The first verse names God as the subject of creation. This note is a placeholder so the schema can be tested beside a real copied verse. It is not Kevin's published commentary."
+  },
+  "tags": [
+    "creation",
+    "draft"
+  ],
+  "revisions": [
+    {
+      "at": "2026-09-01T15:20:00Z",
+      "summary": "Initial schema example. Status draft-for-kevin.",
+      "by": "Baruch"
+    },
+    {
+      "at": "2026-09-08T22:30:00Z",
+      "summary": "M1 harden: createdAt/updatedAt; scriptureCite points at BLB-Draft same-origin corpus.",
+      "by": "Baruch"
+    }
+  ]
+}

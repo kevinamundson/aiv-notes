@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiv.kevinamundson.me/schema/note-v1.json",
+  "title": "AIVNote",
+  "description": "Kevin Amundson's interpretive or pastoral comment for the AIV writer/reader. Never Scripture. Never mixed into a Free Use Bible API or local USX chapter payload. UI must always show the never-Scripture label.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "kind",
+    "label",
+    "author",
+    "range",
+    "verseIds",
+    "body",
+    "visibility",
+    "status",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Bump only with a coordinated NOTES-CONTRACT.md change."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^aiv-note-[a-z0-9-]+$",
+      "description": "Stable note id. Also used as storage filename stem."
+    },
+    "kind": {
+      "const": "aiv-note"
+    },
+    "label": {
+      "const": "Kevin's comment (not Scripture)",
+      "description": "Never-Scripture label. Required on every note object and must be rendered verbatim at the top of every note block in the UI (Bezalel olive pane)."
+    },
+    "author": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "Kevin Amundson"
+        },
+        "role": {
+          "const": "interpreter"
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "draft-for-kevin",
+        "approved-by-kevin"
+      ],
+      "description": "Writer workflow only. draft-for-kevin may stay private/house; public visibility should require approved-by-kevin (app policy)."
+    },
+    "visibility": {
+      "enum": [
+        "private",
+        "house",
+        "public"
+      ],
+      "description": "private = Kevin only; house = AIV agents/Steward circle; public = reader-visible when the notes pane is shipped."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC when the note record was created."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC when body/status/visibility last changed."
+    },
+    "range": {
+      "type": "object",
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false,
+      "description": "Inclusive passage. Uses USFM book ids (AO Lab / Seed Bible book codes), not display names.",
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/verseRef"
+        },
+        "end": {
+          "$ref": "#/$defs/verseRef"
+        }
+      }
+    },
+    "verseIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z0-9]{3}\\.\\d+\\.\\d+$"
+      },
+      "description": "Canonical join keys: {USFM}.{chapter}.{verse} e.g. GEN.1.1. Independent of translation wording. Primary index for Next.js writer and reader joins."
+    },
+    "scriptureCite": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Optional citation of the text the note was written beside. Not the note body. Do not store full chapter JSON here.",
+      "properties": {
+        "translationId": {
+          "type": "string"
+        },
+        "sourceUrl": {
+          "type": "string"
+        },
+        "fetchedAt": {
+          "type": "string"
+        },
+        "sourceLastModified": {
+          "type": "string"
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "required": [
+        "format",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "enum": [
+            "markdown"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Kevin's comment markdown. Never presented as Scripture."
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "revisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "at",
+          "summary"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "verseRef": {
+      "type": "object",
+      "required": [
+        "book",
+        "chapter",
+        "verse"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "book": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{3}$"
+        },
+        "chapter": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "verse": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

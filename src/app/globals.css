@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --page: #F7F4EE;
+  --scripture: #1A1814;
+  --note-ink: #3D4A3A;
+  --note-rule: #6B7F66;
+}
+
+body {
+  background: var(--page);
+  color: var(--scripture);
+  min-height: 100vh;
+}
