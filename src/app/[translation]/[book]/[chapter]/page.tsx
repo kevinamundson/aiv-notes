@@ -15,7 +15,8 @@ type Props = {
 
 export default async function ChapterPage({ params }: Props) {
   const { translation, book, chapter: chapterRaw } = await params;
-  const translationId = (translation || DEFAULT_TRANSLATION_ID).toUpperCase();
+  // HelloAO translation ids are case-sensitive (eng_wmu ≠ ENG_WMU); keep param verbatim.
+  const translationId = decodeURIComponent(translation || DEFAULT_TRANSLATION_ID);
   const bookId = (book || DEFAULT_BOOK).toUpperCase();
   const chapterNum = Number(chapterRaw) || DEFAULT_CHAPTER;
 
