@@ -228,8 +228,8 @@ export function ChapterReader({ chapter, canWrite }: Props) {
                   className={`block w-full rounded px-1 py-0.5 text-left text-scripture ${
                     selected
                       ? endpoint
-                        ? "bg-[rgba(107,127,102,0.18)] ring-1 ring-note-rule/50"
-                        : "bg-[rgba(107,127,102,0.14)]"
+                        ? "bg-[rgba(147,197,253,0.38)] ring-1 ring-sky-300/60 md:bg-[rgba(107,127,102,0.18)] md:ring-note-rule/50"
+                        : "bg-[rgba(147,197,253,0.28)] md:bg-[rgba(107,127,102,0.14)]"
                       : "hover:bg-scripture/5"
                   }`}
                 >

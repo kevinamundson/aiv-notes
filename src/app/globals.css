@@ -7,6 +7,12 @@
   --scripture: #1A1814;
   --note-ink: #3D4A3A;
   --note-rule: #6B7F66;
+  /* M4 mobile dark compose (narrow only) */
+  --m4-modal-fill: rgba(28, 26, 23, 0.9);
+  --m4-modal-ink: #EDE8DF;
+  --m4-modal-ink-bright: #F7F4EE;
+  --m4-label: #B7C4B0;
+  --m4-selection-wash: rgba(147, 197, 253, 0.32);
 }
 
 body {
