@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aiv.kevinamundson.me/schema/note-v1.json",
   "title": "AIVNote",
-  "description": "Kevin Amundson's interpretive or pastoral comment for the AIV writer/reader. Never Scripture. Never mixed into a Free Use Bible API or local USX chapter payload. UI must always show the never-Scripture label.",
+  "description": "Kevin Amundson's interpretive or pastoral comment for the AIV writer/reader. Never Scripture. Never mixed into a Free Use Bible API or local USX chapter payload. UI must always show the never-Scripture label. M2: rich body + inclusive range\u2192verseIds.",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -83,7 +83,7 @@
         "end"
       ],
       "additionalProperties": false,
-      "description": "Inclusive passage. Uses USFM book ids (AO Lab / Seed Bible book codes), not display names.",
+      "description": "Inclusive attachment passage (where the note hangs). Uses USFM book ids. M2: UI expands verseIds from start\u2013end as an inclusive contiguous same-chapter range first.",
       "properties": {
         "start": {
           "$ref": "#/$defs/verseRef"
@@ -101,7 +101,7 @@
         "type": "string",
         "pattern": "^[A-Z0-9]{3}\\.\\d+\\.\\d+$"
       },
-      "description": "Canonical join keys: {USFM}.{chapter}.{verse} e.g. GEN.1.1. Independent of translation wording. Primary index for Next.js writer and reader joins."
+      "description": "Canonical join keys: {USFM}.{chapter}.{verse} e.g. GEN.1.1. Must equal the inclusive expansion of range (same book+chapter) for M2 writer saves. Independent of translation wording. Primary index for storage and reader joins."
     },
     "scriptureCite": {
       "type": "object",
@@ -133,16 +133,23 @@
         "text"
       ],
       "additionalProperties": false,
+      "description": "Note body. Prefer markdown text as the durable form. format=document may carry TipTap JSON in `document` while `text` remains a markdown serialization.",
       "properties": {
         "format": {
           "enum": [
-            "markdown"
-          ]
+            "markdown",
+            "document"
+          ],
+          "description": "markdown = text is source of truth; document = TipTap JSON in `document`, text still required as markdown export."
         },
         "text": {
           "type": "string",
           "minLength": 1,
-          "description": "Kevin's comment markdown. Never presented as Scripture."
+          "description": "Kevin's comment as markdown (or markdown export). Supports **bold**, *italic*, [label](https://...), and scripture refs [[GEN.1.1]] / display GEN 1:1\u20133. Never presented as Scripture."
+        },
+        "document": {
+          "description": "Optional TipTap/ProseMirror JSON when format is document. Must not replace `text`.",
+          "type": "object"
         }
       }
     },

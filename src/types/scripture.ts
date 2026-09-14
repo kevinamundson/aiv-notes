@@ -1,4 +1,5 @@
-/** Free Use Bible API chapter shapes (bible.helloao.org). Notes never appear here. */
+/** Scripture chapter shapes. Notes never appear here. */
+
 export interface TranslationMeta {
   id: string;
   name: string;
@@ -8,6 +9,7 @@ export interface TranslationMeta {
   licenseUrl?: string;
   sha256?: string;
   numberOfBooks?: number;
+  draft?: boolean;
 }
 
 export interface BookMeta {
@@ -31,8 +33,16 @@ export interface ChapterPayload {
   chapter: {
     number: number;
     content: ChapterContentItem[];
+    footnotes?: Array<{ noteId: string; text: string; caller?: string }>;
   };
 }
+
+/** Inline Scripture run — translator `add` renders italic; never AIV notes. */
+export type VerseRun = {
+  text: string;
+  add?: boolean;
+  wordsOfJesus?: boolean;
+};
 
 export interface ChapterView {
   translationId: string;
@@ -43,6 +53,16 @@ export interface ChapterView {
   sourceUrl: string;
   fetchedAt: string;
   sourceLastModified: string | null;
-  verses: Array<{ number: number; text: string; verseId: string }>;
+  draft?: boolean;
+  draftBadge?: string;
+  manifestFetchedAtUtc?: string | null;
+  verses: Array<{
+    number: number;
+    text: string;
+    verseId: string;
+    runs: VerseRun[];
+  }>;
   headings: Array<{ beforeVerse: number; text: string }>;
+  /** Apparatus only (USX f/x) — not AIV notes. */
+  footnotes?: Array<{ noteId: string; text: string; caller?: string; kind?: string }>;
 }

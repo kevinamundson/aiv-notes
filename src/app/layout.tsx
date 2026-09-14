@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AIV Notes — Kevin Amundson",
   description:
-    "Kevin's interpretive notes beside Free Use Bible API Scripture. Notes are never Scripture.",
+    "Kevin's interpretive notes beside Scripture (BLB-Draft USX + Free Use Bible API). Notes are never Scripture.",
 };
 
 export default function RootLayout({
@@ -19,7 +19,7 @@ export default function RootLayout({
             <div>
               <p className="text-sm font-medium tracking-wide">AIV Notes writer</p>
               <p className="text-xs opacity-60">
-                Notes are never Scripture · no finished-translation claim
+                Notes are never Scripture · default BLB-Draft · no finished-translation claim
               </p>
             </div>
             <AuthControls />
@@ -27,11 +27,20 @@ export default function RootLayout({
         </header>
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
         <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs opacity-60">
-          Scripture from{" "}
+          Default Scripture: Berean Literal Bible (Draft) via{" "}
+          <a
+            className="underline"
+            href="https://aivbible.kevinamundson.me/usx/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            aivbible.kevinamundson.me/usx
+          </a>
+          . Other English ids from{" "}
           <a className="underline" href="https://bible.helloao.org" target="_blank" rel="noreferrer">
             bible.helloao.org
           </a>
-          . Default translation BSB. Kevin&apos;s comments are interpretive only.
+          . Kevin&apos;s comments are interpretive only — never Scripture.
         </footer>
       </body>
     </html>
