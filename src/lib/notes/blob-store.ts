@@ -1,4 +1,4 @@
-import { del, list, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 import type { AIVNote, NoteCreateInput, NoteUpdateInput } from "@/types/note";
 import type { NoteStore } from "@/lib/notes/types";
 import {
@@ -6,12 +6,25 @@ import {
   assertNoteShape,
   buildNoteFromCreate,
 } from "@/lib/notes/validate";
+import {
+  blobAccessMode,
+  blobAuthOptions,
+  BLOB_NOT_CONFIGURED_MESSAGE,
+  hasBlobCredentials,
+  isVercelRuntime,
+} from "@/lib/notes/env";
+import { NoteStoreUnavailableError } from "@/lib/notes/errors";
 
 const PREFIX = "aiv-notes";
 
 /**
  * Vercel Blob-backed note store for Hobby / production.
- * Path layout mirrors FS: aiv-notes/by-id/{id}.json and aiv-notes/by-verse/{verseId}.json
+ * Path layout mirrors FS (NOTES-CONTRACT):
+ *   aiv-notes/by-id/{id}.json
+ *   aiv-notes/by-verse/{verseId}.json
+ *
+ * Private Blob stores use access: 'private' and SDK get() (token/OIDC),
+ * never a public CDN fetch of hit.url.
  */
 export class BlobNoteStore implements NoteStore {
   private idKey(id: string) {
@@ -22,37 +35,63 @@ export class BlobNoteStore implements NoteStore {
     return `${PREFIX}/by-verse/${verseId}.json`;
   }
 
+  private access() {
+    return blobAccessMode();
+  }
+
+  private auth() {
+    return blobAuthOptions();
+  }
+
+  private assertWritable() {
+    if (isVercelRuntime() && !hasBlobCredentials()) {
+      throw new NoteStoreUnavailableError(BLOB_NOT_CONFIGURED_MESSAGE);
+    }
+  }
+
   private async readJson<T>(pathname: string): Promise<T | null> {
-    const { blobs } = await list({ prefix: pathname, limit: 10 });
-    const hit = blobs.find((b) => b.pathname === pathname);
-    if (!hit) return null;
-    const res = await fetch(hit.url, { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    const result = await get(pathname, {
+      access: this.access(),
+      ...this.auth(),
+      useCache: false,
+    });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    const text = await new Response(result.stream).text();
+    if (!text) return null;
+    return JSON.parse(text) as T;
   }
 
   private async writeJson(pathname: string, data: unknown) {
-    // Replace existing blob at the same pathname when present (0.27 PutCommandOptions
-    // has no allowOverwrite — delete then put).
-    const { blobs } = await list({ prefix: pathname, limit: 10 });
-    const hit = blobs.find((b) => b.pathname === pathname);
-    if (hit) {
-      await del(hit.url);
-    }
+    this.assertWritable();
     await put(pathname, JSON.stringify(data, null, 2) + "\n", {
-      access: "public",
+      access: this.access(),
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: "application/json",
+      ...this.auth(),
     });
   }
 
+  private async deletePath(pathname: string) {
+    this.assertWritable();
+    await del(pathname, { ...this.auth() });
+  }
+
   async getById(id: string): Promise<AIVNote | null> {
-    return this.readJson<AIVNote>(this.idKey(id));
+    try {
+      return await this.readJson<AIVNote>(this.idKey(id));
+    } catch {
+      return null;
+    }
   }
 
   private async readVerseIndex(verseId: string): Promise<string[]> {
-    const parsed = await this.readJson<string[]>(this.verseKey(verseId));
-    return Array.isArray(parsed) ? parsed : [];
+    try {
+      const parsed = await this.readJson<string[]>(this.verseKey(verseId));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
   async listByVerse(verseId: string): Promise<AIVNote[]> {
@@ -66,6 +105,7 @@ export class BlobNoteStore implements NoteStore {
   }
 
   async create(input: NoteCreateInput): Promise<AIVNote> {
+    this.assertWritable();
     const note = buildNoteFromCreate(input);
     assertNoteShape(note);
     await this.writeJson(this.idKey(note.id), note);
@@ -78,6 +118,7 @@ export class BlobNoteStore implements NoteStore {
   }
 
   async update(id: string, input: NoteUpdateInput): Promise<AIVNote> {
+    this.assertWritable();
     const existing = await this.getById(id);
     if (!existing) throw new Error(`Note not found: ${id}`);
     const prevVerses = new Set(existing.verseIds);
@@ -102,14 +143,13 @@ export class BlobNoteStore implements NoteStore {
   }
 
   async delete(id: string): Promise<void> {
+    this.assertWritable();
     const existing = await this.getById(id);
     if (!existing) return;
     for (const v of existing.verseIds) {
       const ids = (await this.readVerseIndex(v)).filter((x) => x !== id);
       await this.writeJson(this.verseKey(v), ids);
     }
-    const { blobs } = await list({ prefix: this.idKey(id), limit: 5 });
-    const hit = blobs.find((b) => b.pathname === this.idKey(id));
-    if (hit) await del(hit.url);
+    await this.deletePath(this.idKey(id));
   }
 }

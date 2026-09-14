@@ -3,7 +3,7 @@
 AIV Notes writer. Notes are never Scripture. Default translation BSB.
 
 ## Storage
-FsNoteStore by default (data/aiv-notes/). BlobNoteStore when BLOB_READ_WRITE_TOKEN is set.
+Local next dev: FsNoteStore (data/aiv-notes/) unless a Blob token is set. On Vercel: always BlobNoteStore (private by default); never FS.
 
 ## Setup
 1. Clone, checkout develop
