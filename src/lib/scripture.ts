@@ -377,3 +377,5 @@ export async function listEnglishTranslations(): Promise<
     return [blbDraft];
   }
 }
+
+// Chapter/verse navigation counts for the selector: see src/lib/canon.ts (client-safe; not Scripture wording).

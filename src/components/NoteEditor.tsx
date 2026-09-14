@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { DictateButton } from "@/components/DictateButton";
 import { MarkdownToolbar } from "@/components/MarkdownToolbar";
 import { NoteMarkdown } from "@/components/NoteMarkdown";
+import { bookDisplayName } from "@/lib/canon";
 import type { AIVNote, NoteStatus, NoteVisibility, VerseRef } from "@/types/note";
 import { NOTE_LABEL } from "@/types/note";
 
@@ -12,33 +13,46 @@ type Props = {
   range: { start: VerseRef; end: VerseRef };
   verseIds: string[];
   canWrite: boolean;
+  /** Full selected verse wording for the modal quote (Scripture voice). */
+  scriptureQuote?: string;
   scriptureExcerpt?: string;
   translationId?: string;
   sourceUrl?: string;
   fetchedAt?: string;
-  /** Mobile bottom sheet presentation. */
-  variant?: "pane" | "sheet";
+  /** M3: modal is primary compose path. */
+  variant?: "modal" | "pane";
   onClose?: () => void;
   onSaved?: () => void;
 };
 
-function rangeLabel(range: { start: VerseRef; end: VerseRef }): string {
+function displayRef(range: { start: VerseRef; end: VerseRef }): string {
   const { start, end } = range;
+  const name = bookDisplayName(start.book);
   if (start.verse === end.verse) {
-    return `${start.book}.${start.chapter}.${start.verse}`;
+    return `${name} ${start.chapter}:${start.verse}`;
   }
-  return `${start.book} ${start.chapter}:${start.verse}–${end.verse}`;
+  return `${name} ${start.chapter}:${start.verse}–${end.verse}`;
+}
+
+/** Continuous excerpt; if very long, first + ellipsis + last. */
+function formatQuote(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 900) return trimmed;
+  const head = trimmed.slice(0, 420).trimEnd();
+  const tail = trimmed.slice(-280).trimStart();
+  return `${head} … ${tail}`;
 }
 
 export function NoteEditor({
   range,
   verseIds,
   canWrite,
+  scriptureQuote,
   scriptureExcerpt,
   translationId,
   sourceUrl,
   fetchedAt,
-  variant = "pane",
+  variant = "modal",
   onClose,
   onSaved,
 }: Props) {
@@ -50,12 +64,16 @@ export function NoteEditor({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
+  const labelId = useId();
 
   const primaryVerseId = verseIds[0];
+  const quote = formatQuote(scriptureQuote || scriptureExcerpt || "");
 
   const load = useCallback(async () => {
-    // Load notes attached to any verse in the selection (union by first id is enough for index).
     const res = await fetch(
       `/api/notes?verseId=${encodeURIComponent(primaryVerseId)}`,
     );
@@ -70,12 +88,12 @@ export function NoteEditor({
 
   useEffect(() => {
     void load();
-    // New-note defaults when selection changes (Baruch M2).
     setText("");
     setEditingId(null);
     setStatus("draft-for-kevin");
     setVisibility("private");
     setDirty(false);
+    setDetailsOpen(false);
   }, [load, range.start.verse, range.end.verse, range.start.book, range.start.chapter]);
 
   const onDictate = useCallback((piece: string) => {
@@ -83,12 +101,70 @@ export function NoteEditor({
     setDirty(true);
   }, []);
 
+  const dirtyRef = useRef(false);
+  const textRef = useRef("");
+  dirtyRef.current = dirty;
+  textRef.current = text;
+
+  function requestClose() {
+    if (dirtyRef.current && textRef.current.trim()) {
+      if (!confirm("Discard unsaved note text?")) return;
+    }
+    onClose?.();
+  }
+
+  // Focus trap + Esc for modal (mount only — do not re-focus while typing)
+  useEffect(() => {
+    if (variant !== "modal") return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const focusables = () =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute("disabled") && el.tabIndex !== -1);
+
+    const preferred = textareaRef.current ?? focusables()[0];
+    preferred?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (dirtyRef.current && textRef.current.trim()) {
+          if (!confirm("Discard unsaved note text?")) return;
+        }
+        onClose?.();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const list = focusables();
+      if (list.length === 0) return;
+      const i = list.indexOf(document.activeElement as HTMLElement);
+      if (e.shiftKey) {
+        if (i <= 0) {
+          e.preventDefault();
+          list[list.length - 1]?.focus();
+        }
+      } else if (i === list.length - 1 || i < 0) {
+        e.preventDefault();
+        list[0]?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [variant, onClose]);
+
   async function save() {
     if (!canWrite) return;
     setBusy(true);
     setError(null);
     try {
-      // Server recomputes verseIds from range — send range, not a stale client list.
       const payload = {
         bodyText: text,
         status,
@@ -106,12 +182,12 @@ export function NoteEditor({
           },
         },
         scriptureCite:
-          translationId || scriptureExcerpt
+          translationId || scriptureExcerpt || scriptureQuote
             ? {
                 translationId,
                 sourceUrl,
                 fetchedAt,
-                excerpt: scriptureExcerpt?.slice(0, 2000),
+                excerpt: (scriptureExcerpt || scriptureQuote || "").slice(0, 2000),
               }
             : undefined,
       };
@@ -167,42 +243,42 @@ export function NoteEditor({
     setDirty(false);
   }
 
-  function requestClose() {
-    if (dirty && text.trim()) {
-      if (!confirm("Discard unsaved note text?")) return;
-    }
-    onClose?.();
-  }
+  const body = (
+    <>
+      {/* 1. Reference */}
+      <p className="font-note text-xs tracking-wide text-note-rule/90 opacity-90">
+        {displayRef(range)}
+      </p>
 
-  const shellClass =
-    variant === "sheet"
-      ? "font-note flex max-h-[85vh] flex-col border-t-[2px] border-note-rule bg-parchment p-4 text-note-ink"
-      : "font-note max-w-note border-l-[2px] border-note-rule pl-4 text-note-ink";
+      {/* 2. Selected verse text — Scripture voice, not editable, not olive */}
+      {quote ? (
+        <blockquote className="mt-2 max-h-[8.5rem] overflow-y-auto border-l border-scripture/20 pl-3 font-scripture text-[0.95rem] leading-relaxed text-scripture">
+          {quote}
+        </blockquote>
+      ) : null}
 
-  return (
-    <aside className={shellClass}>
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs font-semibold tracking-wide">{NOTE_LABEL}</p>
-          <p className="mt-1 text-xs opacity-70">Attached: {rangeLabel(range)}</p>
-        </div>
-        {variant === "sheet" && onClose ? (
+      {/* 3. Never-Scripture label */}
+      <div className="mt-4 flex items-start justify-between gap-2">
+        <p id={labelId} className="text-xs font-semibold tracking-wide text-note-ink">
+          {NOTE_LABEL}
+        </p>
+        {onClose ? (
           <button
             type="button"
-            className="min-h-[44px] min-w-[44px] rounded border border-note-rule/40 text-sm"
+            className="min-h-[44px] min-w-[44px] shrink-0 rounded border border-note-rule/40 text-sm md:min-h-0 md:min-w-0 md:px-2 md:py-1"
             onClick={requestClose}
-            aria-label="Close note sheet"
+            aria-label="Close note"
           >
             Close
           </button>
         ) : null}
       </div>
 
-      <div className={variant === "sheet" ? "min-h-0 flex-1 overflow-y-auto" : ""}>
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
         {notes.length === 0 ? (
           <p className="mb-4 text-sm opacity-70">No note yet for this selection.</p>
         ) : (
-          <ul className="mb-6 space-y-4">
+          <ul className="mb-4 space-y-4">
             {notes.map((n) => (
               <li key={n.id} className="text-sm leading-relaxed">
                 <p className="mb-1 text-[0.7rem] font-semibold uppercase tracking-wide opacity-80">
@@ -210,10 +286,7 @@ export function NoteEditor({
                 </p>
                 <NoteMarkdown text={n.body.text} />
                 <p className="mt-1 text-[0.65rem] opacity-60">
-                  {n.status} · {n.visibility} ·{" "}
-                  {n.range.start.verse === n.range.end.verse
-                    ? n.verseIds[0]
-                    : `${n.range.start.book} ${n.range.start.chapter}:${n.range.start.verse}–${n.range.end.verse}`}
+                  {n.status} · {n.visibility}
                 </p>
                 {canWrite ? (
                   <div className="mt-1 flex gap-2 text-xs">
@@ -231,7 +304,7 @@ export function NoteEditor({
         )}
 
         {canWrite ? (
-          <div className="space-y-2">
+          <div className="flex min-h-0 flex-col space-y-2">
             <p className="text-xs font-medium">{editingId ? "Edit note" : "New note"}</p>
             <MarkdownToolbar
               value={text}
@@ -245,53 +318,64 @@ export function NoteEditor({
             />
             <textarea
               ref={textareaRef}
-              className="mt-1 w-full rounded border border-note-rule/40 bg-parchment p-2 text-sm text-note-ink"
-              rows={variant === "sheet" ? 6 : 6}
+              className="min-h-[10rem] w-full flex-1 rounded border border-note-rule/40 bg-parchment p-3 font-note text-sm leading-relaxed text-note-ink md:min-h-[12rem]"
+              style={{ maxWidth: "45ch" }}
+              rows={8}
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
                 setDirty(true);
               }}
-              placeholder="Kevin's interpretive comment (never Scripture). Markdown: **bold** *italic* [[GEN.1.1]] [label](https://…)"
+              placeholder="Write here — never Scripture. **bold** *italic*"
+              aria-labelledby={labelId}
             />
             <DictateButton onTranscript={onDictate} disabled={busy} />
-            <div className="flex flex-wrap gap-2 text-xs">
-              <label>
-                Status{" "}
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as NoteStatus)}
-                  className="border border-note-rule/40 bg-parchment"
-                >
-                  <option value="draft-for-kevin">draft-for-kevin</option>
-                  <option value="approved-by-kevin">approved-by-kevin</option>
-                </select>
-              </label>
-              <label>
-                Visibility{" "}
-                <select
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value as NoteVisibility)}
-                  className="border border-note-rule/40 bg-parchment"
-                >
-                  <option value="private">private</option>
-                  <option value="house">house</option>
-                  <option value="public">public</option>
-                </select>
-              </label>
-            </div>
-            <p className="text-[0.65rem] opacity-60">
-              Policy: public requires approved-by-kevin. In-body refs do not change attachment
-              range. Server recomputes verseIds from range on save.
-            </p>
-            <div className="flex gap-2">
+
+            <details
+              className="text-xs"
+              open={detailsOpen}
+              onToggle={(e) => setDetailsOpen((e.target as HTMLDetailsElement).open)}
+            >
+              <summary className="cursor-pointer select-none opacity-70">Details</summary>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <label>
+                  Status{" "}
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as NoteStatus)}
+                    className="border border-note-rule/40 bg-parchment"
+                  >
+                    <option value="draft-for-kevin">draft-for-kevin</option>
+                    <option value="approved-by-kevin">approved-by-kevin</option>
+                  </select>
+                </label>
+                <label>
+                  Visibility{" "}
+                  <select
+                    value={visibility}
+                    onChange={(e) => setVisibility(e.target.value as NoteVisibility)}
+                    className="border border-note-rule/40 bg-parchment"
+                  >
+                    <option value="private">private</option>
+                    <option value="house">house</option>
+                    <option value="public">public</option>
+                  </select>
+                </label>
+              </div>
+              <p className="mt-1 opacity-60">
+                Policy: public requires approved-by-kevin. In-body refs do not change attachment
+                range.
+              </p>
+            </details>
+
+            <div className="flex gap-2 pt-1">
               <button
                 type="button"
                 disabled={busy || !text.trim()}
                 onClick={() => void save()}
                 className="min-h-[44px] rounded bg-note-rule px-3 py-1 text-xs text-parchment disabled:opacity-50 md:min-h-0"
               >
-                {editingId ? "Update" : "Create"}
+                {editingId ? "Update" : "Save"}
               </button>
               {editingId ? (
                 <button
@@ -316,6 +400,38 @@ export function NoteEditor({
 
         {error ? <p className="mt-2 text-xs text-red-800">{error}</p> : null}
       </div>
+    </>
+  );
+
+  if (variant === "modal") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4" role="presentation">
+        <button
+          type="button"
+          className="absolute inset-0 bg-scripture/50"
+          aria-label="Dismiss note modal"
+          onClick={requestClose}
+        />
+        <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          className="relative z-10 flex max-h-[min(92vh,52rem)] w-full max-w-[36rem] flex-col overflow-hidden rounded-md border-2 border-note-rule bg-parchment p-4 text-note-ink shadow-[0_12px_40px_rgba(26,24,20,0.18)] sm:p-6 md:max-w-[40rem]"
+          style={{ marginLeft: "max(0px, env(safe-area-inset-left))", marginRight: "max(0px, env(safe-area-inset-right))" }}
+        >
+          <h2 id={titleId} className="sr-only">
+            Note for {displayRef(range)}
+          </h2>
+          <div className="font-note flex min-h-0 flex-1 flex-col">{body}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <aside className="font-note max-w-note border-l-[2px] border-note-rule pl-4 text-note-ink">
+      {body}
     </aside>
   );
 }

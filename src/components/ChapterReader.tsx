@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChapterVerseSelector } from "@/components/ChapterVerseSelector";
 import { NoteEditor } from "@/components/NoteEditor";
 import { BLB_DRAFT_BADGE, BLB_DRAFT_ID } from "@/lib/constants";
 import type { ChapterView, VerseRun } from "@/types/scripture";
@@ -55,24 +56,16 @@ function VerseText({ runs, text }: { runs?: VerseRun[]; text: string }) {
   );
 }
 
+/**
+ * Product rule (M3): Scripture-column tap opens the note modal;
+ * chapter/verse selector verse pick scrolls to that verse AND selects it (opens modal).
+ */
 export function ChapterReader({ chapter, canWrite }: Props) {
-  const firstId = chapter.verses[0]?.verseId ?? null;
-  const [anchor, setAnchor] = useState<number | null>(
-    chapter.verses[0]?.number ?? null,
-  );
-  const [extent, setExtent] = useState<number | null>(
-    chapter.verses[0]?.number ?? null,
-  );
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1023px)");
-    const apply = () => setIsMobile(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const [extent, setExtent] = useState<number | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const verseEls = useRef<Map<number, HTMLElement>>(new Map());
+  const hashHandled = useRef<string | null>(null);
 
   const headingByVerse = useMemo(() => {
     const m = new Map<number, string>();
@@ -80,6 +73,7 @@ export function ChapterReader({ chapter, canWrite }: Props) {
     return m;
   }, [chapter.headings]);
 
+  const hasSelection = anchor !== null;
   const rangeStart = anchor ?? chapter.verses[0]?.number ?? 1;
   const rangeEnd = extent ?? rangeStart;
   const lo = Math.min(rangeStart, rangeEnd);
@@ -90,38 +84,80 @@ export function ChapterReader({ chapter, canWrite }: Props) {
     end: parseVerseId(verseIds[verseIds.length - 1]),
   };
 
-  const excerpt = chapter.verses
-    .filter((v) => v.number >= lo && v.number <= hi)
-    .map((v) => v.text)
-    .join(" ")
-    .slice(0, 2000);
+  const selectedVerses = chapter.verses.filter((v) => v.number >= lo && v.number <= hi);
+  const quote = selectedVerses.map((v) => v.text).join(" ");
+  const excerpt = quote.slice(0, 2000);
 
-  function selectVerse(verseNumber: number, extend: boolean) {
+  function selectVerse(verseNumber: number, extend: boolean, openModal = true) {
     if (extend && anchor !== null) {
       setExtent(verseNumber);
     } else {
       setAnchor(verseNumber);
       setExtent(verseNumber);
     }
-    if (isMobile) setSheetOpen(true);
+    if (openModal) setModalOpen(true);
   }
 
-  const showSheet = isMobile && sheetOpen && firstId;
-  const showPane = !isMobile && firstId;
+  function scrollToVerse(verseNumber: number) {
+    const el = verseEls.current.get(verseNumber);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  /** Selector: scroll + select → opens modal (same as column tap). */
+  function onSelectorVerse(verseNumber: number) {
+    selectVerse(verseNumber, false, true);
+    requestAnimationFrame(() => scrollToVerse(verseNumber));
+  }
+
+  // Deep-link from selector navigation: #v12
+  useEffect(() => {
+    const applyHash = () => {
+      const hash = window.location.hash;
+      const m = /^#v(\d+)$/.exec(hash);
+      if (!m) return;
+      const key = `${chapter.bookId}.${chapter.chapter}.${m[1]}`;
+      if (hashHandled.current === key) return;
+      const n = Number(m[1]);
+      if (!chapter.verses.some((v) => v.number === n)) return;
+      hashHandled.current = key;
+      selectVerse(n, false, true);
+      requestAnimationFrame(() => scrollToVerse(n));
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapter.bookId, chapter.chapter, chapter.verses]);
+
+  // Reset selection when chapter route changes
+  useEffect(() => {
+    setAnchor(null);
+    setExtent(null);
+    setModalOpen(false);
+  }, [chapter.bookId, chapter.chapter, chapter.translationId]);
 
   return (
-    <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
+    <div className="relative">
       <section className="font-scripture max-w-scripture text-scripture">
         <header className="mb-6 border-b border-scripture/15 pb-4">
-          <h1 className="text-2xl font-normal">
-            {chapter.bookName} {chapter.chapter}
-            <span className="ml-2 text-base opacity-70">/ {chapter.translationId}</span>
-            {chapter.translationId === BLB_DRAFT_ID || chapter.draft ? (
-              <span className="ml-2 inline-block rounded border border-scripture/30 px-1.5 py-0.5 align-middle text-[0.65rem] font-note tracking-wide opacity-80">
-                {chapter.draftBadge ?? BLB_DRAFT_BADGE}
-              </span>
-            ) : null}
-          </h1>
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <ChapterVerseSelector
+              translationId={chapter.translationId}
+              bookId={chapter.bookId}
+              chapter={chapter.chapter}
+              loadedVerseCount={chapter.verses.length}
+              onSelectVerse={onSelectorVerse}
+            />
+            <h1 className="text-2xl font-normal">
+              {chapter.bookName} {chapter.chapter}
+              <span className="ml-2 text-base opacity-70">/ {chapter.translationId}</span>
+              {chapter.translationId === BLB_DRAFT_ID || chapter.draft ? (
+                <span className="ml-2 inline-block rounded border border-scripture/30 px-1.5 py-0.5 align-middle text-[0.65rem] font-note tracking-wide opacity-80">
+                  {chapter.draftBadge ?? BLB_DRAFT_BADGE}
+                </span>
+              ) : null}
+            </h1>
+          </div>
           <dl className="mt-2 space-y-1 text-xs opacity-70">
             <div>
               <dt className="inline font-medium">Translation: </dt>
@@ -159,17 +195,23 @@ export function ChapterReader({ chapter, canWrite }: Props) {
             ) : null}
           </dl>
           <p className="mt-2 font-note text-[0.7rem] text-note-ink/70">
-            Tap a verse for a note. Shift-tap (or long-press then tap) to extend a same-chapter
-            range.
+            Tap a verse to open the note modal. Shift-tap (or long-press then tap) to extend a
+            same-chapter range. Use {chapter.bookId} {chapter.chapter} to jump chapters or verses.
           </p>
         </header>
 
         <div className="space-y-3 text-[1.125rem] leading-relaxed">
           {chapter.verses.map((v) => {
-            const selected = v.number >= lo && v.number <= hi;
-            const endpoint = v.number === lo || v.number === hi;
+            const selected = hasSelection && v.number >= lo && v.number <= hi;
+            const endpoint = selected && (v.number === lo || v.number === hi);
             return (
-              <div key={v.verseId}>
+              <div
+                key={v.verseId}
+                ref={(el) => {
+                  if (el) verseEls.current.set(v.number, el);
+                  else verseEls.current.delete(v.number);
+                }}
+              >
                 {headingByVerse.has(v.number) ? (
                   <h2 className="mb-2 mt-6 text-lg font-normal opacity-80">
                     {headingByVerse.get(v.number)}
@@ -177,6 +219,7 @@ export function ChapterReader({ chapter, canWrite }: Props) {
                 ) : null}
                 <button
                   type="button"
+                  id={`v${v.number}`}
                   onClick={(e) => selectVerse(v.number, e.shiftKey)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -218,47 +261,28 @@ export function ChapterReader({ chapter, canWrite }: Props) {
         ) : null}
       </section>
 
-      {showPane ? (
+      {/* Quiet empty hint when no modal — not a compose side-sheet */}
+      {!modalOpen ? (
+        <p className="mt-6 max-w-note font-note text-xs text-note-ink/70">
+          <span className="font-semibold text-note-ink">Kevin&apos;s comment (not Scripture)</span>
+          {" — "}
+          tap a verse to compose. No note open.
+        </p>
+      ) : null}
+
+      {modalOpen && hasSelection ? (
         <NoteEditor
           range={range}
           verseIds={verseIds}
           canWrite={canWrite}
+          scriptureQuote={quote}
           scriptureExcerpt={excerpt}
           translationId={chapter.translationId}
           sourceUrl={chapter.sourceUrl}
           fetchedAt={chapter.fetchedAt}
-          variant="pane"
+          variant="modal"
+          onClose={() => setModalOpen(false)}
         />
-      ) : !isMobile ? (
-        <aside className="font-note max-w-note border-l-[2px] border-note-rule pl-4 text-note-ink">
-          <p className="text-xs font-semibold">Kevin&apos;s comment (not Scripture)</p>
-          <p className="mt-2 text-sm opacity-70">Tap a verse to open the notes pane.</p>
-        </aside>
-      ) : null}
-
-      {/* Mobile: bottom sheet ≥45–60% viewport (Bezalel M2) */}
-      {showSheet ? (
-        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true">
-          <button
-            type="button"
-            className="absolute inset-0 bg-scripture/30"
-            aria-label="Dismiss note sheet"
-            onClick={() => setSheetOpen(false)}
-          />
-          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] min-h-[50vh] overflow-hidden rounded-t-lg shadow-lg">
-            <NoteEditor
-              range={range}
-              verseIds={verseIds}
-              canWrite={canWrite}
-              scriptureExcerpt={excerpt}
-              translationId={chapter.translationId}
-              sourceUrl={chapter.sourceUrl}
-              fetchedAt={chapter.fetchedAt}
-              variant="sheet"
-              onClose={() => setSheetOpen(false)}
-            />
-          </div>
-        </div>
       ) : null}
     </div>
   );
