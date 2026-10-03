@@ -1,0 +1,19 @@
+# dependencies
+/node_modules
+/.next/
+/out/
+/build
+.DS_Store
+*.pem
+*-debug.log*
+*-error.log*
+.env
+.env*.local
+.env.development
+.env.production
+.vercel
+*.tsbuildinfo
+/data/aiv-notes/by-id/*.json
+/data/aiv-notes/by-verse/*.json
+!/data/aiv-notes/by-id/.gitkeep
+!/data/aiv-notes/by-verse/.gitkeep
