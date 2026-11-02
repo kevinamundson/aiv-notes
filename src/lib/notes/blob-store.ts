@@ -5,6 +5,7 @@ import {
   applyNoteUpdate,
   assertNoteShape,
   buildNoteFromCreate,
+  normalizeNote,
 } from "@/lib/notes/validate";
 import {
   blobAccessMode,
@@ -79,7 +80,7 @@ export class BlobNoteStore implements NoteStore {
 
   async getById(id: string): Promise<AIVNote | null> {
     try {
-      return await this.readJson<AIVNote>(this.idKey(id));
+      return normalizeNote(await this.readJson<AIVNote>(this.idKey(id)));
     } catch {
       return null;
     }

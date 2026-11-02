@@ -6,6 +6,7 @@ import {
   applyNoteUpdate,
   assertNoteShape,
   buildNoteFromCreate,
+  normalizeNote,
 } from "@/lib/notes/validate";
 
 const DATA_ROOT = path.join(process.cwd(), "data", "aiv-notes");
@@ -32,7 +33,7 @@ export class FsNoteStore implements NoteStore {
     await this.ensureDirs();
     try {
       const raw = await fs.readFile(this.idPath(id), "utf8");
-      return JSON.parse(raw) as AIVNote;
+      return normalizeNote(JSON.parse(raw) as AIVNote);
     } catch {
       return null;
     }

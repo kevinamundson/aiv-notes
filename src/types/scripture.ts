@@ -55,14 +55,21 @@ export interface ChapterView {
   sourceLastModified: string | null;
   draft?: boolean;
   draftBadge?: string;
-  manifestFetchedAtUtc?: string | null;
   verses: Array<{
     number: number;
     text: string;
     verseId: string;
     runs: VerseRun[];
   }>;
-  headings: Array<{ beforeVerse: number; text: string }>;
+  /** Several may precede one verse (e.g. s1, r, then a Psalm superscription). */
+  headings: Array<{
+    beforeVerse: number;
+    text: string;
+    /** section (s1/qa…), ref (r), subtitle (d). Absent = section. */
+    kind?: "section" | "ref" | "subtitle";
+  }>;
+  /** Chapter-end `d` postscripts (after the last verse). */
+  postscripts?: Array<{ text: string }>;
   /** Apparatus only (USX f/x) — not AIV notes. */
   footnotes?: Array<{ noteId: string; text: string; caller?: string; kind?: string }>;
 }

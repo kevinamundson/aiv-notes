@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AIV Notes — Kevin Amundson",
   description:
-    "Kevin's interpretive notes beside Scripture (BLB-Draft USX + Free Use Bible API). Notes are never Scripture.",
+    "Kevin's interpretive notes beside Scripture (Amundson Interpretive Version (AIV) + Free Use Bible API). Notes are never Scripture.",
 };
 
 export default function RootLayout({
@@ -19,7 +19,7 @@ export default function RootLayout({
             <div>
               <p className="text-sm font-medium tracking-wide">AIV Notes writer</p>
               <p className="text-xs opacity-60">
-                Notes are never Scripture · default BLB-Draft · no finished-translation claim
+                Notes are never Scripture · default AIV (draft) · no finished-translation claim
               </p>
             </div>
             <AuthControls />
@@ -27,14 +27,14 @@ export default function RootLayout({
         </header>
         <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
         <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs opacity-60">
-          Default Scripture: Berean Literal Bible (Draft) via{" "}
+          Default Scripture: Amundson Interpretive Version (AIV), draft, read live from{" "}
           <a
             className="underline"
-            href="https://aivbible.kevinamundson.me/usx/"
+            href="https://aivbible.kevinamundson.me/"
             target="_blank"
             rel="noreferrer"
           >
-            aivbible.kevinamundson.me/usx
+            aivbible.kevinamundson.me
           </a>
           . Other English ids from{" "}
           <a className="underline" href="https://bible.helloao.org" target="_blank" rel="noreferrer">

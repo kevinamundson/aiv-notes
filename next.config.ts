@@ -1,12 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Scripture fetched server-side from bible.helloao.org; notes never mixed in.
-  // Include BLB-Draft USX static corpus in serverless traces so fs reads work on Vercel.
-  outputFileTracingIncludes: {
-    "/[translation]/[book]/[chapter]": ["./public/blb-draft/usx/**/*"],
-    "/*": ["./public/blb-draft/usx/**/*"],
-  },
+  // Scripture fetched server-side: AIV live from aivbible.kevinamundson.me/usx,
+  // other ids from bible.helloao.org. No bundled Scripture; notes never mixed in.
 };
 
 export default nextConfig;

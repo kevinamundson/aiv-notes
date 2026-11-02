@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BLB_DRAFT_ID, DEFAULT_BOOK, DEFAULT_CHAPTER } from "@/lib/constants";
+import { AIV_ID, DEFAULT_BOOK, DEFAULT_CHAPTER, translationLabel } from "@/lib/constants";
 
 type Item = { id: string; name: string; complete?: boolean; draft?: boolean };
 
@@ -18,12 +18,12 @@ export function TranslationPicker({
   chapter: number;
 }) {
   const router = useRouter();
-  // BLB-Draft always first; then complete eng, then remaining (exact case).
-  const blb = items.filter((t) => t.id === BLB_DRAFT_ID);
-  const rest = items.filter((t) => t.id !== BLB_DRAFT_ID);
+  // AIV always first; then complete eng, then remaining (exact case).
+  const aiv = items.filter((t) => t.id === AIV_ID);
+  const rest = items.filter((t) => t.id !== AIV_ID);
   const complete = rest.filter((t) => t.complete);
   const other = rest.filter((t) => !t.complete);
-  const list = [...blb, ...(complete.length ? complete : rest), ...(complete.length ? other : [])];
+  const list = [...aiv, ...(complete.length ? complete : rest), ...(complete.length ? other : [])];
   // Dedupe while preserving order
   const seen = new Set<string>();
   const ordered = list.filter((t) => {
@@ -45,8 +45,8 @@ export function TranslationPicker({
       >
         {ordered.map((t) => (
           <option key={t.id} value={t.id}>
-            {t.id}
-            {t.draft || t.id === BLB_DRAFT_ID ? " [DRAFT]" : ""} — {t.name}
+            {translationLabel(t.id)}
+            {t.draft || t.id === AIV_ID ? " [DRAFT]" : ""} — {t.name}
           </option>
         ))}
       </select>
@@ -55,7 +55,7 @@ export function TranslationPicker({
           {ordered.slice(0, 12).map((t) => (
             <li key={t.id}>
               <Link href={`/${t.id}/${book || DEFAULT_BOOK}/${chapter || DEFAULT_CHAPTER}`}>
-                {t.id}
+                {translationLabel(t.id)}
               </Link>
             </li>
           ))}

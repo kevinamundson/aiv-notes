@@ -1,15 +1,34 @@
-import { assertPublicPolicy, NOTE_LABEL } from "@/lib/constants";
+import { assertPublicPolicy, normalizeTranslationId, NOTE_LABEL } from "@/lib/constants";
 import {
   expandVerseIdsFromRange,
   normalizeRange,
   parseVerseId,
 } from "@/lib/notes/range";
-import type { AIVNote, NoteCreateInput, NoteUpdateInput, VerseRef } from "@/types/note";
+import type {
+  AIVNote,
+  NoteCreateInput,
+  NoteUpdateInput,
+  ScriptureCite,
+  VerseRef,
+} from "@/types/note";
 import { NOTE_KIND } from "@/types/note";
 
 const ID_RE = /^aiv-note-[a-z0-9-]+$/;
 
 export { parseVerseId, expandVerseIdsFromRange, normalizeRange };
+
+/** Cites saved under the retired draft id read as eng_aiv (stored file untouched). */
+export function normalizeCite(cite: ScriptureCite | undefined): ScriptureCite | undefined {
+  if (!cite?.translationId) return cite;
+  const translationId = normalizeTranslationId(cite.translationId);
+  return translationId === cite.translationId ? cite : { ...cite, translationId };
+}
+
+export function normalizeNote(note: AIVNote | null): AIVNote | null {
+  if (!note?.scriptureCite) return note;
+  const scriptureCite = normalizeCite(note.scriptureCite);
+  return scriptureCite === note.scriptureCite ? note : { ...note, scriptureCite };
+}
 
 export function newNoteId(verseId: string): string {
   const slug = verseId.toLowerCase().replace(/\./g, "-");
@@ -57,7 +76,7 @@ export function buildNoteFromCreate(input: NoteCreateInput): AIVNote {
     updatedAt: now,
     range,
     verseIds,
-    scriptureCite: input.scriptureCite,
+    scriptureCite: normalizeCite(input.scriptureCite),
     body: { format: "markdown", text: input.bodyText.trim() },
     tags: input.tags,
     revisions: [
@@ -102,7 +121,7 @@ export function applyNoteUpdate(existing: AIVNote, input: NoteUpdateInput): AIVN
     range,
     body: { format: "markdown", text: bodyText },
     tags: input.tags ?? existing.tags,
-    scriptureCite: input.scriptureCite ?? existing.scriptureCite,
+    scriptureCite: normalizeCite(input.scriptureCite ?? existing.scriptureCite),
     revisions: [
       ...(existing.revisions ?? []),
       { at: now, summary: "Updated via AIV Notes writer M2", by: "Kevin Amundson" },

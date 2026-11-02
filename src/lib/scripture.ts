@@ -1,29 +1,22 @@
-import { promises as fs } from "fs";
-import path from "path";
 import {
+  AIV_BADGE,
+  AIV_ID,
+  AIV_NAME,
+  AIV_REVALIDATE_SECONDS,
+  AIVBIBLE_METADATA_URL,
   AIVBIBLE_USX_BASE,
-  BLB_DRAFT_BADGE,
-  BLB_DRAFT_ID,
-  BLB_DRAFT_NAME,
   DEFAULT_TRANSLATION_ID,
   HELLOAO_API_BASE,
+  LEGACY_DRAFT_ID,
+  normalizeTranslationId,
 } from "@/lib/constants";
+import { getCanonBook } from "@/lib/canon";
 import {
   convertUsxChapter,
   runsFromVerseContent,
-  type UsxManifest,
+  type AivMetadata,
 } from "@/lib/usx-to-chapter";
 import type { ChapterPayload, ChapterView, VerseRun } from "@/types/scripture";
-
-/** Bundled same-origin draft corpus (committed under public/). Never BSB. */
-const BUNDLED_USX_DIR = path.join(
-  process.cwd(),
-  "public",
-  "blb-draft",
-  "usx",
-);
-const BUNDLED_MANIFEST = path.join(BUNDLED_USX_DIR, "manifest.json");
-const PUBLIC_USX_PATH = "/blb-draft/usx";
 
 function flattenVerseContent(
   content: Array<string | Record<string, unknown>>,
@@ -53,30 +46,38 @@ export function chapterSourceUrl(
   book: string,
   chapter: number,
 ): string {
-  if (translationId === BLB_DRAFT_ID) {
+  if (normalizeTranslationId(translationId) === AIV_ID) {
     return `${AIVBIBLE_USX_BASE}/${encodeURIComponent(book)}.usx`;
   }
   return `${HELLOAO_API_BASE}/${encodeURIComponent(translationId)}/${encodeURIComponent(book)}/${chapter}.json`;
 }
 
-/** Origin for same-origin static asset fetch (AUTH_URL / VERCEL_URL). */
-function sameOriginBase(): string | null {
-  const auth = process.env.AUTH_URL?.replace(/\/$/, "");
-  if (auth) return auth;
-  const vercel = process.env.VERCEL_URL?.replace(/\/$/, "");
-  if (vercel) {
-    return vercel.startsWith("http") ? vercel : `https://${vercel}`;
+/** AIV display name from aivbible metadata.json; constant if unreachable. */
+async function loadAivName(): Promise<string> {
+  try {
+    const res = await fetch(AIVBIBLE_METADATA_URL, {
+      next: { revalidate: AIV_REVALIDATE_SECONDS },
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const meta = (await res.json()) as AivMetadata;
+      const name = meta.name?.trim();
+      if (name && meta.shortName) return `${name} (${meta.shortName.trim()})`;
+      if (name) return name;
+    }
+  } catch {
+    // fall through
   }
-  return null;
+  return AIV_NAME;
 }
 
-async function tryFetchUsx(
-  url: string,
-  errors: string[],
-): Promise<{ xml: string; sourceUrl: string } | null> {
+/** Live AIV USX from aivbible. No bundled copy, no fallback text. */
+async function loadUsxXml(book: string): Promise<{ xml: string; sourceUrl: string }> {
+  const url = `${AIVBIBLE_USX_BASE}/${encodeURIComponent(book)}.usx`;
+  let detail: string;
   try {
     const res = await fetch(url, {
-      next: { revalidate: 3600 },
+      next: { revalidate: AIV_REVALIDATE_SECONDS },
       headers: { Accept: "application/xml,text/xml,*/*" },
     });
     if (res.ok) {
@@ -84,139 +85,37 @@ async function tryFetchUsx(
       if (xml.includes("<usx") || xml.includes("<USX")) {
         return { xml, sourceUrl: url };
       }
-      errors.push(`${url}: response was not USX`);
+      detail = "response was not USX";
     } else {
-      errors.push(`${url}: HTTP ${res.status}`);
+      detail = `HTTP ${res.status}`;
     }
   } catch (e) {
-    errors.push(`${url}: ${e instanceof Error ? e.message : "fetch failed"}`);
+    detail = e instanceof Error ? e.message : "fetch failed";
   }
-  return null;
+  throw new Error(`Chapter unavailable: AIV text for ${book} could not be loaded from ${url} (${detail}).`);
 }
 
-async function tryReadUsxFile(
-  filePath: string,
-  errors: string[],
-): Promise<{ xml: string; sourceUrl: string } | null> {
-  try {
-    const xml = await fs.readFile(filePath, "utf8");
-    if (xml.includes("<usx") || xml.includes("<USX")) {
-      return { xml, sourceUrl: `file://${filePath}` };
-    }
-    errors.push(`${filePath}: file was not USX`);
-  } catch (e) {
-    errors.push(
-      `${filePath}: ${e instanceof Error ? e.message : "read failed"}`,
-    );
-  }
-  return null;
-}
-
-async function loadManifest(): Promise<UsxManifest> {
-  const remoteUrl = `${AIVBIBLE_USX_BASE}/manifest.json`;
-  try {
-    const res = await fetch(remoteUrl, {
-      next: { revalidate: 3600 },
-      headers: { Accept: "application/json" },
-    });
-    if (res.ok) return (await res.json()) as UsxManifest;
-  } catch {
-    // fall through
-  }
-
-  // Bundled public/ asset (same-origin corpus)
-  try {
-    const raw = await fs.readFile(BUNDLED_MANIFEST, "utf8");
-    return JSON.parse(raw) as UsxManifest;
-  } catch {
-    // fall through
-  }
-
-  const origin = sameOriginBase();
-  if (origin) {
-    try {
-      const res = await fetch(`${origin}${PUBLIC_USX_PATH}/manifest.json`, {
-        next: { revalidate: 3600 },
-        headers: { Accept: "application/json" },
-      });
-      if (res.ok) return (await res.json()) as UsxManifest;
-    } catch {
-      // fall through
-    }
-  }
-
-  // Optional env override only (never hardcoded /workspace)
-  const envManifest = process.env.BLB_DRAFT_MANIFEST;
-  if (envManifest) {
-    try {
-      const raw = await fs.readFile(envManifest, "utf8");
-      return JSON.parse(raw) as UsxManifest;
-    } catch {
-      // fall through
-    }
-  }
-
-  return {
-    id: BLB_DRAFT_ID,
-    displayName: BLB_DRAFT_NAME,
-    status: "draft",
-  };
-}
-
-async function loadUsxXml(book: string): Promise<{ xml: string; sourceUrl: string }> {
-  const remoteUrl = `${AIVBIBLE_USX_BASE}/${encodeURIComponent(book)}.usx`;
-  const errors: string[] = [];
-
-  // (a) Preferred aivbible remote host
-  const remote = await tryFetchUsx(remoteUrl, errors);
-  if (remote) return remote;
-
-  // (b) Same-origin bundled corpus under public/blb-draft/usx
-  const bundledPath = path.join(BUNDLED_USX_DIR, `${book}.usx`);
-  const bundled = await tryReadUsxFile(bundledPath, errors);
-  if (bundled) return bundled;
-
-  const origin = sameOriginBase();
-  if (origin) {
-    const sameOriginUrl = `${origin}${PUBLIC_USX_PATH}/${encodeURIComponent(book)}.usx`;
-    const viaFetch = await tryFetchUsx(sameOriginUrl, errors);
-    if (viaFetch) return viaFetch;
-  }
-
-  // (c) Optional env override — only when explicitly set (no /workspace default)
-  const envDir = process.env.BLB_DRAFT_USX_DIR;
-  if (envDir) {
-    const envPath = path.join(envDir, `${book}.usx`);
-    const fromEnv = await tryReadUsxFile(envPath, errors);
-    if (fromEnv) return fromEnv;
-  }
-
-  throw new Error(
-    `BLB-Draft USX unavailable for ${book}. Tried preferred aivbible host, same-origin draft corpus under ${PUBLIC_USX_PATH}, and BLB_DRAFT_USX_DIR if set (not BSB). ${errors.join(" | ")}`,
-  );
-}
-
-async function fetchBlbDraftChapter(
+async function fetchAivChapter(
   book: string,
   chapter: number,
 ): Promise<ChapterView> {
   const fetchedAt = new Date().toISOString();
-  const manifest = await loadManifest();
-  const { xml, sourceUrl } = await loadUsxXml(book);
-  const converted = convertUsxChapter(xml, book, chapter, manifest);
+  const [translationName, { xml, sourceUrl }] = await Promise.all([
+    loadAivName(),
+    loadUsxXml(book),
+  ]);
+  const converted = convertUsxChapter(xml, book, chapter);
 
   const verses: ChapterView["verses"] = [];
   const headings: ChapterView["headings"] = [];
-  let pendingHeading: string | null = null;
+  let pending: ChapterView["headings"] = [];
 
   for (const item of converted.content) {
     if (item.type === "heading") {
-      pendingHeading = item.content.join(" ");
+      pending.push({ beforeVerse: 0, text: item.content.join(" "), kind: item.kind });
     } else if (item.type === "verse") {
-      if (pendingHeading) {
-        headings.push({ beforeVerse: item.number, text: pendingHeading });
-        pendingHeading = null;
-      }
+      for (const h of pending) headings.push({ ...h, beforeVerse: item.number });
+      pending = [];
       const { text, runs } = runsFromVerseContent(item.content);
       verses.push({
         number: item.number,
@@ -229,24 +128,28 @@ async function fetchBlbDraftChapter(
 
   if (!verses.length) {
     throw new Error(
-      `BLB-Draft USX for ${book} chapter ${chapter} parsed zero verses (source: ${sourceUrl})`,
+      `Chapter unavailable: AIV ${book} ${chapter} parsed zero verses (source: ${sourceUrl})`,
     );
   }
 
   return {
-    translationId: BLB_DRAFT_ID,
+    translationId: AIV_ID,
     bookId: book,
     chapter,
-    translationName: converted.translationName || BLB_DRAFT_NAME,
-    bookName: converted.bookName,
+    translationName,
+    // Same chapter-heading names as before ("Psalm 3"); USX h/toc as fallback.
+    bookName: getCanonBook(book)?.name ?? converted.bookName,
     sourceUrl,
     fetchedAt,
     sourceLastModified: null,
     draft: true,
-    draftBadge: BLB_DRAFT_BADGE,
-    manifestFetchedAtUtc: converted.manifestFetchedAtUtc ?? manifest.fetchedAtUtc ?? null,
+    draftBadge: AIV_BADGE,
     verses,
     headings,
+    // `d` after the last verse (Psalm postscripts, HAB 3:19).
+    postscripts: pending
+      .filter((h) => h.kind === "subtitle")
+      .map((h) => ({ text: h.text })),
     footnotes: converted.footnotes,
   };
 }
@@ -315,14 +218,9 @@ export async function fetchChapter(
   book: string = "GEN",
   chapter: number = 1,
 ): Promise<ChapterView> {
-  // Never call HelloAO for BLB / BLB-Draft — that id is not in the catalog.
-  if (translationId === BLB_DRAFT_ID) {
-    return fetchBlbDraftChapter(book, chapter);
-  }
-  if (translationId === "BLB") {
-    throw new Error(
-      "HelloAO has no BLB id. Use BLB-Draft (local USX) or another English catalog id (e.g. BSB).",
-    );
+  // AIV is read from aivbible only; the retired draft id maps to it.
+  if (normalizeTranslationId(translationId) === AIV_ID) {
+    return fetchAivChapter(book, chapter);
   }
   return fetchHelloAoChapter(translationId, book, chapter);
 }
@@ -330,9 +228,9 @@ export async function fetchChapter(
 export async function listEnglishTranslations(): Promise<
   Array<{ id: string; name: string; complete?: boolean; draft?: boolean }>
 > {
-  const blbDraft = {
-    id: BLB_DRAFT_ID,
-    name: BLB_DRAFT_NAME,
+  const aiv = {
+    id: AIV_ID,
+    name: await loadAivName(),
     complete: true,
     draft: true,
   };
@@ -340,7 +238,7 @@ export async function listEnglishTranslations(): Promise<
   try {
     const url = `${HELLOAO_API_BASE}/available_translations.json`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [blbDraft];
+    if (!res.ok) return [aiv];
     const data = (await res.json()) as {
       translations?: Array<{
         id: string;
@@ -368,13 +266,13 @@ export async function listEnglishTranslations(): Promise<
           draft: false,
         };
       })
-      // Exact case from catalog; never invent BLB.
-      .filter((t) => t.id !== "BLB" && t.id !== BLB_DRAFT_ID)
+      // Exact case from catalog; AIV is listed once, from aivbible.
+      .filter((t) => t.id !== AIV_ID && t.id !== LEGACY_DRAFT_ID)
       .sort((a, b) => a.id.localeCompare(b.id));
 
-    return [blbDraft, ...eng];
+    return [aiv, ...eng];
   } catch {
-    return [blbDraft];
+    return [aiv];
   }
 }
 

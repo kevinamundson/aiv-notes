@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChapterVerseSelector } from "@/components/ChapterVerseSelector";
 import { NoteEditor } from "@/components/NoteEditor";
-import { BLB_DRAFT_BADGE, BLB_DRAFT_ID } from "@/lib/constants";
+import { AIV_BADGE, AIV_ID, translationLabel } from "@/lib/constants";
 import type { ChapterView, VerseRun } from "@/types/scripture";
 import type { VerseRef } from "@/types/note";
 
@@ -67,9 +67,13 @@ export function ChapterReader({ chapter, canWrite }: Props) {
   const verseEls = useRef<Map<number, HTMLElement>>(new Map());
   const hashHandled = useRef<string | null>(null);
 
-  const headingByVerse = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const h of chapter.headings) m.set(h.beforeVerse, h.text);
+  const headingsByVerse = useMemo(() => {
+    const m = new Map<number, ChapterView["headings"]>();
+    for (const h of chapter.headings) {
+      const list = m.get(h.beforeVerse) ?? [];
+      list.push(h);
+      m.set(h.beforeVerse, list);
+    }
     return m;
   }, [chapter.headings]);
 
@@ -150,10 +154,12 @@ export function ChapterReader({ chapter, canWrite }: Props) {
             />
             <h1 className="text-2xl font-normal">
               {chapter.bookName} {chapter.chapter}
-              <span className="ml-2 text-base opacity-70">/ {chapter.translationId}</span>
-              {chapter.translationId === BLB_DRAFT_ID || chapter.draft ? (
+              <span className="ml-2 text-base opacity-70">
+                / {translationLabel(chapter.translationId)}
+              </span>
+              {chapter.translationId === AIV_ID || chapter.draft ? (
                 <span className="ml-2 inline-block rounded border border-scripture/30 px-1.5 py-0.5 align-middle text-[0.65rem] font-note tracking-wide opacity-80">
-                  {chapter.draftBadge ?? BLB_DRAFT_BADGE}
+                  {chapter.draftBadge ?? AIV_BADGE}
                 </span>
               ) : null}
             </h1>
@@ -181,12 +187,6 @@ export function ChapterReader({ chapter, canWrite }: Props) {
               <dt className="inline font-medium">fetchedAt: </dt>
               <dd className="inline">{formatFetchedAt(chapter.fetchedAt)}</dd>
             </div>
-            {chapter.manifestFetchedAtUtc ? (
-              <div>
-                <dt className="inline font-medium">manifest fetchedAtUtc: </dt>
-                <dd className="inline">{chapter.manifestFetchedAtUtc}</dd>
-              </div>
-            ) : null}
             {chapter.sourceLastModified ? (
               <div>
                 <dt className="inline font-medium">Last-Modified: </dt>
@@ -212,11 +212,21 @@ export function ChapterReader({ chapter, canWrite }: Props) {
                   else verseEls.current.delete(v.number);
                 }}
               >
-                {headingByVerse.has(v.number) ? (
-                  <h2 className="mb-2 mt-6 text-lg font-normal opacity-80">
-                    {headingByVerse.get(v.number)}
-                  </h2>
-                ) : null}
+                {(headingsByVerse.get(v.number) ?? []).map((h, i) =>
+                  h.kind === "ref" ? (
+                    <p key={i} className="mb-2 text-sm italic opacity-70">
+                      {h.text}
+                    </p>
+                  ) : h.kind === "subtitle" ? (
+                    <p key={i} className="mb-2 px-1 text-base italic opacity-85">
+                      {h.text}
+                    </p>
+                  ) : (
+                    <h2 key={i} className="mb-2 mt-6 text-lg font-normal opacity-80">
+                      {h.text}
+                    </h2>
+                  ),
+                )}
                 <button
                   type="button"
                   id={`v${v.number}`}
@@ -246,6 +256,12 @@ export function ChapterReader({ chapter, canWrite }: Props) {
             );
           })}
         </div>
+
+        {chapter.postscripts?.map((p, i) => (
+          <p key={i} className="mt-3 px-1 text-right text-base italic opacity-85">
+            {p.text}
+          </p>
+        ))}
 
         {chapter.footnotes?.length ? (
           <footer className="mt-8 border-t border-scripture/10 pt-4 font-note text-xs text-scripture/60">
