@@ -1,21 +1,28 @@
 /**
- * BLB-Draft USX → reader chapter JSON.
- * Port of /workspace/aiv-translations/blb-draft/usx_to_seed_chapter.py (Ezra).
- * Marker map: char@add → italic; note@f/x → apparatus (not AIV notes).
- * Does not invent HelloAO BLB id. Does not vendor Seed Bible AGPL.
+ * AIV (eng_aiv) USX → reader chapter JSON.
+ * Port of Ezra's usx_to_seed_chapter.py. Does not vendor Seed Bible AGPL.
+ * Marker map:
+ *   para@s/s1/s2/s3/ms/ms1/mr → heading (section)
+ *   para@qa                  → heading (acrostic letter; closes the previous verse)
+ *   para@r                   → heading (parallel-passage refs)
+ *   para@d                   → subtitle (Psalm superscription, or postscript when
+ *                              it follows the chapter's last verse); a `d` that
+ *                              holds a verse (HAB 3:1) is read as that verse
+ *   para@cls                 → verse text (colophons; `p vid=` continues the verse)
+ *   para@h/toc1-3/mt1/rem    → book-level, before chapter 1 (h/toc/mt give the book name)
+ *   verse@eid                → closes the verse, so later paras never join it
+ *   char@add → italic; note@f/x → apparatus (not AIV notes)
  */
 
-export type UsxManifest = {
-  fetchedAtUtc?: string;
-  fetchedAtAmericaChicago?: string;
-  sourceUrl?: string;
-  sourcePage?: string;
-  status?: string;
-  displayName?: string;
+/** aivbible metadata.json (subset). */
+export type AivMetadata = {
   id?: string;
-  stats?: { verses?: number };
-  books?: Array<{ usfm: string; nameAsReceived?: string; chapters?: number }>;
+  name?: string;
+  englishName?: string;
+  shortName?: string;
 };
+
+export type HeadingKind = "section" | "ref" | "subtitle";
 
 export type FormattedRun = {
   text: string;
@@ -24,13 +31,11 @@ export type FormattedRun = {
 };
 
 export type UsxChapterResult = {
-  translationId: "BLB-Draft";
-  translationName: string;
   bookId: string;
   bookName: string;
   chapter: number;
   content: Array<
-    | { type: "heading"; content: string[] }
+    | { type: "heading"; kind: HeadingKind; content: string[] }
     | {
         type: "verse";
         number: number;
@@ -43,11 +48,24 @@ export type UsxChapterResult = {
     caller: string;
     kind: "footnote" | "crossReference";
   }>;
-  manifestFetchedAtUtc?: string;
 };
 
 function collectPlain(xml: string): string {
   return xml.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
+}
+
+const SECTION_STYLES = ["s", "s1", "s2", "s3", "ms", "ms1", "mr", "qa"];
+
+/** Book name from the book-level `h`, `toc2`, `toc1` or `mt1` para (before chapter 1). */
+export function usxBookName(usxXml: string): string | null {
+  const firstChapter = usxXml.search(/<chapter\b/i);
+  const head = firstChapter >= 0 ? usxXml.slice(0, firstChapter) : usxXml;
+  for (const style of ["h", "toc2", "toc1", "mt1", "mt"]) {
+    const m = new RegExp(`<para\\b[^>]*\\bstyle="${style}"[^>]*>([\\s\\S]*?)</para>`, "i").exec(head);
+    const name = m ? collectPlain(m[1]).trim() : "";
+    if (name) return name;
+  }
+  return null;
 }
 
 function findChapterSlice(usxXml: string, chapterNum: number): string {
@@ -79,17 +97,18 @@ export function convertUsxChapter(
   usxXml: string,
   book: string,
   chapterNum: number,
-  manifest: UsxManifest = {},
 ): UsxChapterResult {
   const content: UsxChapterResult["content"] = [];
   const footnotes: UsxChapterResult["footnotes"] = [];
   let noteCounter = 1;
   let currentVerse: number | null = null;
   let verseContent: Array<string | FormattedRun | { noteId: string }> = [];
+  /** Verse already emitted that a `vid=` para continues after a heading (GEN 2:4 in pass 5). */
+  let resumeItem: { content: typeof verseContent } | null = null;
 
   const flushVerse = () => {
     if (currentVerse !== null) {
-      const merged: typeof verseContent = [];
+      const merged: typeof verseContent = resumeItem ? [...resumeItem.content] : [];
       for (const item of verseContent) {
         if (
           typeof item === "string" &&
@@ -101,8 +120,10 @@ export function convertUsxChapter(
           merged.push(item);
         }
       }
-      content.push({ type: "verse", number: currentVerse, content: merged });
+      if (resumeItem) resumeItem.content = merged;
+      else content.push({ type: "verse", number: currentVerse, content: merged });
     }
+    resumeItem = null;
     currentVerse = null;
     verseContent = [];
   };
@@ -125,6 +146,8 @@ export function convertUsxChapter(
       if (m[0].startsWith("<verse")) {
         const vAttrs = m[1] ?? "";
         if (/\beid\s*=/.test(vAttrs)) {
+          // End of verse: later paras (d postscript, qa) must not join it.
+          flushVerse();
           last = m.index + m[0].length;
           continue;
         }
@@ -167,26 +190,66 @@ export function convertUsxChapter(
     const styleMatch = /\bstyle="([^"]*)"/i.exec(attrs);
     const style = styleMatch?.[1] ?? "";
 
-    if (["s", "s1", "s2", "ms", "mr"].includes(style)) {
+    const holdsVerse = /<verse\b[^>]*\bsid\s*=/i.test(inner);
+    const kind: HeadingKind | null = SECTION_STYLES.includes(style)
+      ? "section"
+      : style === "r"
+        ? "ref"
+        : style === "d" && !holdsVerse
+          ? "subtitle"
+          : null;
+    if (kind) {
       flushVerse();
-      const heading = collectPlain(inner).trim();
-      if (heading) content.push({ type: "heading", content: [heading] });
+      // Footnotes inside a heading go to the apparatus, not into the heading text.
+      const noteRe = /<note\b([^>]*)>([\s\S]*?)<\/note>/gi;
+      for (const n of inner.matchAll(noteRe)) {
+        const nStyle = /\bstyle="([^"]*)"/i.exec(n[1])?.[1];
+        footnotes.push({
+          noteId: `note-${noteCounter++}`,
+          text: collectPlain(n[2]).trim(),
+          caller: /\bcaller="([^"]*)"/i.exec(n[1])?.[1] ?? "+",
+          kind: nStyle === "f" ? "footnote" : "crossReference",
+        });
+      }
+      const heading = collectPlain(inner.replace(noteRe, "")).trim();
+      if (heading) content.push({ type: "heading", kind, content: [heading] });
       continue;
+    }
+    // A `vid=` para after a heading continues a verse that was closed by that heading
+    // (e.g. cls colophon, s1, then the rest of the verse). Keep it one verse.
+    const vid = /\bvid="[^"]*?:(\d+)"/i.exec(attrs);
+    if (vid && currentVerse === null) {
+      const n = Number(vid[1]);
+      const target = [...content]
+        .reverse()
+        .find((c) => c.type === "verse");
+      if (target && target.type === "verse" && target.number === n) {
+        resumeItem = target;
+        currentVerse = n;
+        verseContent = [];
+      }
     }
     walk(inner);
   }
   flushVerse();
 
-  const bookMeta = manifest.books?.find((b) => b.usfm === book);
+  // A `d` between two verses (EXO 28:36, EXO 39:30, DAN 5:25 inscriptions) is not a
+  // title or postscript: keep its words with the verse before it, as this reader always has.
+  for (let i = content.length - 2; i > 0; i--) {
+    const item = content[i];
+    const prev = content[i - 1];
+    if (item.type !== "heading" || item.kind !== "subtitle" || prev.type !== "verse") continue;
+    if (!content.slice(i + 1).some((c) => c.type === "verse")) continue;
+    prev.content.push(` ${item.content.join(" ")}`);
+    content.splice(i, 1);
+  }
+
   return {
-    translationId: "BLB-Draft",
-    translationName: manifest.displayName || "Berean Literal Bible (Draft)",
     bookId: book,
-    bookName: bookMeta?.nameAsReceived || book,
+    bookName: usxBookName(usxXml) || book,
     chapter: chapterNum,
     content,
     footnotes,
-    manifestFetchedAtUtc: manifest.fetchedAtUtc,
   };
 }
 

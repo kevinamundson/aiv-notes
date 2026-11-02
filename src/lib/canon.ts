@@ -1,4 +1,4 @@
-/** Protestant 66-book navigation counts from BLB-Draft USX (chapter/verse numbers only — not Scripture wording). */
+/** Protestant 66-book navigation counts from the draft USX source (chapter/verse numbers only — not Scripture wording). */
 export type CanonBook = { usfm: string; name: string; chapters: number; versesByChapter: number[] };
 
 /** versesByChapter[i] = verse count for chapter i+1 */

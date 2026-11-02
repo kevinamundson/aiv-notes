@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { ChapterReader } from "@/components/ChapterReader";
 import { TranslationPicker } from "@/components/TranslationPicker";
 import { auth, isAllowlistedLogin } from "@/lib/auth";
@@ -5,6 +6,7 @@ import {
   DEFAULT_BOOK,
   DEFAULT_CHAPTER,
   DEFAULT_TRANSLATION_ID,
+  normalizeTranslationId,
 } from "@/lib/constants";
 import { fetchChapter, listEnglishTranslations } from "@/lib/scripture";
 import { noteStoreBackend } from "@/lib/notes";
@@ -19,6 +21,12 @@ export default async function ChapterPage({ params }: Props) {
   const translationId = decodeURIComponent(translation || DEFAULT_TRANSLATION_ID);
   const bookId = (book || DEFAULT_BOOK).toUpperCase();
   const chapterNum = Number(chapterRaw) || DEFAULT_CHAPTER;
+
+  // Old BLB-Draft links and bookmarks open AIV (temporary redirect; #vN is kept by the browser).
+  const canonicalId = normalizeTranslationId(translationId);
+  if (canonicalId !== translationId) {
+    redirect(`/${encodeURIComponent(canonicalId)}/${bookId}/${chapterNum}`);
+  }
 
   const session = await auth();
   const login = (session?.user as { login?: string } | undefined)?.login;

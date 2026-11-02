@@ -5,6 +5,7 @@ import { DictateButton } from "@/components/DictateButton";
 import { MarkdownToolbar } from "@/components/MarkdownToolbar";
 import { NoteMarkdown } from "@/components/NoteMarkdown";
 import { bookDisplayName } from "@/lib/canon";
+import { translationLabel } from "@/lib/constants";
 import type { AIVNote, NoteStatus, NoteVisibility, VerseRef } from "@/types/note";
 import { NOTE_LABEL } from "@/types/note";
 
@@ -91,7 +92,7 @@ export function NoteEditor({
   const primaryVerseId = verseIds[0];
   const quote = formatQuote(scriptureQuote || scriptureExcerpt || "");
   const refLine = translationId
-    ? `${displayRef(range)} ${translationId}`
+    ? `${displayRef(range)} ${translationLabel(translationId)}`
     : displayRef(range);
 
   const load = useCallback(async () => {
